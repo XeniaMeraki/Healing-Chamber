@@ -46,10 +46,10 @@ inputs:
   builder-distro:
     description: Distribution to use for the builder container (for tools and dependencies)
     required: false
-    default: fedora
+    default: archlinux
 outputs:
   iso-dest:
-    description: Where the iso was be placed
+    description: Where the iso will be placed
     value: ${{ steps.generate-iso.outputs.iso_dest }}
 
 runs:
