@@ -164,7 +164,6 @@ initramfs:
     echo "[Autologin] " >> /etc/sddm.conf
     echo "User=liveuser" >> /etc/sddm.conf
     echo "Session=plasmawayland" >> /etc/sddm.conf
-    pacman -Sy --noconfirm dracut
     KERNEL_VERSION=$(basename "$(find /usr/lib/modules -maxdepth 1 -type d | grep -v -E "*.img" | tail -n 1)")
     mkdir -p $(realpath /root)
     export DRACUT_NO_XATTR=1
@@ -179,7 +178,6 @@ rootfs-include-container container_image=default_image image=default_image:
     set -euo pipefail
     CMD="set -xeuo pipefail
     mkdir -p /var/lib/containers/storage
-    pacman -Sy --noconfirm podman
     podman pull {{ container_image || image }}
     pacman -Sy --noconfirm fuse-overlayfs"
     chroot "$CMD"
@@ -192,7 +190,6 @@ rootfs-include-flatpaks FLATPAKS_FILE="src/flatpaks.example.txt":
     {{ chroot_function }}
     CMD='set -xeuo pipefail
     mkdir -p /var/lib/flatpak
-    pacman -S --noconfirm flatpak
 
     # Get Flatpaks
     flatpak remote-add --if-not-exists flathub "https://dl.flathub.org/repo/flathub.flatpakrepo"
