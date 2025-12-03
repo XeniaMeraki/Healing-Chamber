@@ -41,23 +41,6 @@ ostreecontainer --url=$imageref:$imagetag --transport=containers-storage --no-si
 %include /usr/share/anaconda/post-scripts/install-configure-upgrade.ks
 EOF
 
-# Install Flatpaks
-cat <<'EOF' >>/usr/share/anaconda/post-scripts/install-flatpaks.ks
-%post --erroronfail --nochroot
-deployment="$(ostree rev-parse --repo=/mnt/sysimage/ostree/repo ostree/0/1/0)"
-target="/mnt/sysimage/ostree/deploy/default/deploy/$deployment.0/var/lib/"
-mkdir -p "$target"
-rsync -aAXUHKP /var/lib/flatpak "$target"
-%end
-EOF
-
-# Disable Fedora Flatpak Repo
-cat <<EOF >>/usr/share/anaconda/post-scripts/disable-fedora-flatpak.ks
-%post --erroronfail
-systemctl disable flatpak-add-fedora-repos.service
-%end
-EOF
-
 # Set Anaconda Payload to use flathub
 cat <<EOF >>/etc/anaconda/conf.d/anaconda.conf
 [Payload]
