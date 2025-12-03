@@ -39,6 +39,7 @@ fi
 cat <<EOF >>/usr/share/anaconda/interactive-defaults.ks
 ostreecontainer --url=$imageref:$imagetag --transport=containers-storage --no-signature-verification
 %include /usr/share/anaconda/post-scripts/install-configure-upgrade.ks
+%include /usr/share/anaconda/post-scripts/install-flatpaks.ks
 EOF
 
 # Set Anaconda Payload to use flathub
