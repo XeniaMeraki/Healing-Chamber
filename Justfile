@@ -9,7 +9,7 @@ arch := arch()
 # Distribution to use for the builder container (for tools and dependencies)
 # Supported values: fedora, centos, almalinux
 # Set via TITANOBOA_BUILDER_DISTRO environment variable (default: fedora)
-builder_distro := env("TITANOBOA_BUILDER_DISTRO", "fedora")
+builder_distro := env("TITANOBOA_BUILDER_DISTRO", "almalinux")
 ##############################
 
 ### HOOKS SCRIPT PATHS ###
@@ -237,6 +237,7 @@ rootfs-install-livesys-scripts livesys="1":
         plasma*) desktop_env=kde    ;;
         sway*)   desktop_env=sway   ;;
         xfce*)   desktop_env=xfce   ;;
+        niri*)   desktop_env=niri   ;;
         *) echo "\
            {{ style('error') }}ERROR[rootfs-install-livesys-scripts]{{ NORMAL }}\
            : No Livesys Environment Found"; exit 1 ;;
