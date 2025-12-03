@@ -232,6 +232,7 @@ rootfs-install-livesys-scripts livesys="1":
         plasma*) desktop_env=kde    ;;
         sway*)   desktop_env=sway   ;;
         xfce*)   desktop_env=xfce   ;;
+        niri*)   desktop_env=niri   ;;
         *) echo "\
            {{ style('error') }}ERROR[rootfs-install-livesys-scripts]{{ NORMAL }}\
            : No Livesys Environment Found"; exit 1 ;;
