@@ -37,7 +37,7 @@ just := just_executable() + " -f " + source_file()
 git_root := source_dir()
 
 [private]
-builder_image := if builder_distro == "fedora" { "quay.io/fedora/fedora:latest" } else if builder_distro == "centos" { "ghcr.io/hanthor/centos-anaconda-builder:main" } else if builder_distro == "almalinux-kitten" { "quay.io/almalinuxorg/almalinux:10-kitten" } else if builder_distro == "almalinux" { "quay.io/almalinuxorg/almalinux:10" } else { error("Unsupported builder distribution: " + builder_distro + ". Supported: fedora, centos, almalinux") }
+builder_image := if builder_distro == "fedora" { "quay.io/fedora/fedora:latest" } else if builder_distro == "centos" { "ghcr.io/hanthor/centos-anaconda-builder:main" } else if builder_distro == "almalinux-kitten" { "quay.io/almalinux/almalinux:10-kitten" } else if builder_distro == "almalinux" { "quay.io/almalinux/almalinux:10" } else { error("Unsupported builder distribution: " + builder_distro + ". Supported: fedora, centos, almalinux") }
 
 
 [private]
@@ -156,11 +156,19 @@ initramfs:
     {{ chroot_function }}
     set -euo pipefail
     CMD='set -xeuo pipefail
-    dnf install -y dracut-live
-    INSTALLED_KERNEL=$(rpm -q kernel-core --queryformat "%{evr}.%{arch}" | tail -n 1)
+    useradd -m -c "Live System User" liveuser
+    usermod -p "$(echo "liveuser" | mkpasswd -s)" liveuser
+    usermod -p "$(echo "root" | mkpasswd -s)" root
+    usermod -aG wheel liveuser
+    echo "liveuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+    echo "[Autologin] " >> /etc/sddm.conf
+    echo "User=liveuser" >> /etc/sddm.conf
+    echo "Session=plasmawayland" >> /etc/sddm.conf
+    pacman -Sy --noconfirm dracut
+    KERNEL_VERSION=$(basename "$(find /usr/lib/modules -maxdepth 1 -type d | grep -v -E "*.img" | tail -n 1)")
     mkdir -p $(realpath /root)
     export DRACUT_NO_XATTR=1
-    dracut --zstd --reproducible --no-hostonly --kver "$INSTALLED_KERNEL" --add "dmsquash-live dmsquash-live-autooverlay" --force /app/{{ workdir }}/initramfs.img |& grep -v -e "Operation not supported"'
+    dracut --force --no-hostonly --reproducible --zstd --verbose --kver "$KERNEL_VERSION" --add "dmsquash-live dmsquash-live-autooverlay" /app/{{ workdir }}/initramfs.img |& grep -v -e "Operation not supported"'
     chroot "$CMD"
 
 # Embed the container
@@ -171,8 +179,9 @@ rootfs-include-container container_image=default_image image=default_image:
     set -euo pipefail
     CMD="set -xeuo pipefail
     mkdir -p /var/lib/containers/storage
+    pacman -Sy --noconfirm podman
     podman pull {{ container_image || image }}
-    dnf install -y fuse-overlayfs"
+    pacman -Sy --noconfirm fuse-overlayfs"
     chroot "$CMD"
 
 # Install Flatpaks into the live system
@@ -183,11 +192,11 @@ rootfs-include-flatpaks FLATPAKS_FILE="src/flatpaks.example.txt":
     {{ chroot_function }}
     CMD='set -xeuo pipefail
     mkdir -p /var/lib/flatpak
-    dnf install -y flatpak
+    pacman -S --noconfirm flatpak
 
     # Get Flatpaks
     flatpak remote-add --if-not-exists flathub "https://dl.flathub.org/repo/flathub.flatpakrepo"
-    grep -v "#.*" /flatpak-list/$(basename {{ FLATPAKS_FILE }}) | sort --reverse | xargs "-i{}" -d "\n" sh -c "flatpak remote-info --arch={{ arch }} --system flathub {} &>/dev/null && flatpak install --noninteractive -y {}" || true'
+    # grep -v "#.*" /flatpak-list/$(basename {{ FLATPAKS_FILE }}) | sort --reverse | xargs "-i{}" -d "\n" sh -c "flatpak remote-info --arch={{ arch }} --system flathub {} &>/dev/null && flatpak install --noninteractive -y {}" || true'
     set -euo pipefail
     chroot "$CMD" --volume "$(realpath "$(dirname {{ FLATPAKS_FILE }})")":/flatpak-list
 
@@ -207,8 +216,18 @@ rootfs-install-livesys-scripts livesys="1":
     {{ chroot_function }}
     set -euo pipefail
     CMD='set -xeuo pipefail
-    dnf="$({ which dnf5 || which dnf; } 2>/dev/null)"
-    $dnf install -y livesys-scripts
+    curl https://pagure.io/livesys-scripts/archive/0.8.0/livesys-scripts-0.8.0.tar.gz --output /tmp/livesys.tar.gz
+    cd /tmp
+    tar -xf livesys.tar.gz
+    cd livesys-scripts-0.8.0
+    install -D -m 0644 /tmp/livesys-scripts-0.8.0/etc/sysconfig/livesys -t /etc/sysconfig
+    install -D -m 0644 /tmp/livesys-scripts-0.8.0/libexec/livesys/functions -t /usr/libexec/livesys
+    install -D -m 0644 /tmp/livesys-scripts-0.8.0/libexec/livesys/livesys-late -t /usr/libexec/livesys
+    install -D -m 0644 /tmp/livesys-scripts-0.8.0/libexec/livesys/livesys-main -t /usr/libexec/livesys
+    install -D -m 0644 /tmp/livesys-scripts-0.8.0/libexec/livesys/sessions.d/livesys-* -t /usr/libexec/livesys/sessions.d/
+    install -D -m 0644 /tmp/livesys-scripts-0.8.0/systemd/*.service -t /usr/lib/systemd/system
+    cd /
+    
 
     # Determine desktop environment. Must match one of /usr/libexec/livesys/sessions.d/livesys-{desktop_env}
     desktop_env=""
@@ -229,6 +248,7 @@ rootfs-install-livesys-scripts livesys="1":
 
     # Enable services
     systemctl enable livesys.service livesys-late.service
+    systemctl disable plasma-setup.service
 
     # Set default time zone to prevent oddities with KDE clock
     echo "C /var/lib/livesys/livesys-session-extra 0755 root root - /usr/share/factory/var/lib/livesys/livesys-session-extra" > \
@@ -265,28 +285,11 @@ rootfs-clean-sysroot:
     CMD='set -xeuo pipefail
     if [[ -d /app ]]; then
         rm -rf /sysroot /ostree
-        dnf autoremove -y
-        dnf clean all -y
+        pacman -Sc --noconfirm
+        pacman -Scc --noconfirm
+        rm -rf /var/cache/pacman/pkg/*
     fi'
     chroot "$CMD"
-
-# Fix SELinux Permissions
-rootfs-selinux-fix image=default_image:
-    #!/usr/bin/env bash
-    {{ _ci_grouping }}
-    set -euo pipefail
-    CMD='set -xeuo pipefail
-    cd /app/{{ rootfs }}
-    setfiles -F -r . /etc/selinux/targeted/contexts/files/file_contexts .
-    chcon --user=system_u --recursive .'
-    {{ PODMAN }} run --rm -it \
-        --volume {{ git_root }}:/app \
-        --workdir "/app" \
-        --security-opt label=disable \
-        --privileged \
-        {{ image }} \
-        /usr/bin/bash -c "$CMD"
-    rmdir {{ rootfs }}/app || true
 
 # Compress rootfs into a compressed image
 squash fs_type="squashfs":
@@ -347,21 +350,14 @@ iso:
     CMD='set -xeuo pipefail
     ISOROOT="$0"
     WORKDIR="$1"
-
+    dnf install -y grub2 grub2-efi grub2-tools grub2-tools-extra xorriso shim dosfstools {{ if arch == "x86_64" { 'grub2-efi-x64-modules grub2-efi-x64-cdboot grub2-efi-x64' } else if arch == "aarch64" { 'grub2-efi-aa64-modules' } else { '' } }}
     mkdir -p $ISOROOT/EFI/BOOT
     # ARCH_SHORT needs to be uppercase
     ARCH_SHORT="$(echo {{ arch }} | sed 's/x86_64/x64/g' | sed 's/aarch64/aa64/g')"
     ARCH_32="$(echo {{ arch }} | sed 's/x86_64/ia32/g' | sed 's/aarch64/arm/g')"
-    if [[ "$(rpm -E %centos)" -ge 10 ]]; then
-        cp -avf /boot/efi/EFI/centos/. $ISOROOT/EFI/BOOT
-    elif [[ "$(rpm -E %fedora)" -ge 41 ]]; then
-        cp -avf /boot/efi/EFI/fedora/. $ISOROOT/EFI/BOOT
-    fi
     cp -avf $ISOROOT/boot/grub/grub.cfg $ISOROOT/EFI/BOOT/BOOT.conf
     cp -avf $ISOROOT/boot/grub/grub.cfg $ISOROOT/EFI/BOOT/grub.cfg
-    cp -avf /boot/grub*/fonts/unicode.pf2 $ISOROOT/EFI/BOOT/fonts
-    cp -avf $ISOROOT/EFI/BOOT/shim${ARCH_SHORT}.efi "$ISOROOT/EFI/BOOT/BOOT${ARCH_SHORT^^}.efi"
-    cp -avf $ISOROOT/EFI/BOOT/shim.efi "$ISOROOT/EFI/BOOT/BOOT${ARCH_32}.efi"
+
 
     ARCH_GRUB="$(echo {{ arch }} | sed 's/x86_64/i386-pc/g' | sed 's/aarch64/arm64-efi/g')"
     ARCH_OUT="$(echo {{ arch }} | sed 's/x86_64/i386-pc-eltorito/g' | sed 's/aarch64/arm64-efi/g')"
@@ -369,21 +365,6 @@ iso:
 
     grub2-mkimage -O $ARCH_OUT -d /usr/lib/grub/$ARCH_GRUB -o $ISOROOT/boot/eltorito.img -p /boot/grub iso9660 $ARCH_MODULES
     grub2-mkrescue -o $ISOROOT/../efiboot.img
-
-    EFI_BOOT_MOUNT=$(mktemp -d)
-    mount $ISOROOT/../efiboot.img $EFI_BOOT_MOUNT
-    cp -r $EFI_BOOT_MOUNT/boot/grub $ISOROOT/boot/
-    umount $EFI_BOOT_MOUNT
-    rm -rf $EFI_BOOT_MOUNT
-
-    # https://github.com/FyraLabs/katsu/blob/1e26ecf74164c90bc24299a66f8495eb2aef4845/src/builder.rs#L145
-    EFI_BOOT_PART=$(mktemp -d)
-    fallocate $WORKDIR/efiboot.img -l 25M
-    mkfs.msdos -v -n EFI $WORKDIR/efiboot.img
-    mount $WORKDIR/efiboot.img $EFI_BOOT_PART
-    mkdir -p $EFI_BOOT_PART/EFI/BOOT
-    cp -dRvf $ISOROOT/EFI/BOOT/. $EFI_BOOT_PART/EFI/BOOT
-    umount $EFI_BOOT_PART
 
     ARCH_SPECIFIC=()
     if [ "{{ arch }}" == "x86_64" ] ; then
@@ -419,7 +400,7 @@ iso:
     else
         {{ if `systemd-detect-virt -c || true` != 'none' { "echo '" + style('error') + "ERROR[iso]" + NORMAL + ": Cannot run in nested containers'; exit 1" } else { '' } }}
         {{ builder_function }}
-        CMD="dnf install -y grub2 grub2-efi grub2-tools grub2-tools-extra xorriso shim dosfstools {{ if arch == "x86_64" { 'grub2-efi-x64-modules grub2-efi-x64-cdboot grub2-efi-x64' } else if arch == "aarch64" { 'grub2-efi-aa64-modules' } else { '' } }}; $CMD"
+        CMD="pacman -Sy --noconfirm grub libisoburn shim dosfstools ; $CMD"
         builder "$CMD" "/app/{{ isoroot }}" "/app/{{ workdir }}"
     fi
 
@@ -440,7 +421,6 @@ iso:
     (rootfs-include-container container_image image) \
     (hook-post-rootfs HOOK_post_rootfs) \
     rootfs-clean-sysroot \
-    (rootfs-selinux-fix image) \
     (ci-delete-image image) \
     (squash compression) \
     (iso-organize extra_kargs) \
