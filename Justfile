@@ -208,7 +208,7 @@ rootfs-install-livesys-scripts livesys="1":
     {{ chroot_function }}
     set -euo pipefail
     CMD='set -xeuo pipefail
-    curl https://pagure.io/livesys-scripts/archive/0.8.0/livesys-scripts-0.8.0.tar.gz --output /tmp/livesys.tar.gz
+    curl --retry 5 https://pagure.io/livesys-scripts/archive/0.8.0/livesys-scripts-0.8.0.tar.gz --output /tmp/livesys.tar.gz
     cd /tmp
     tar -xf livesys.tar.gz
     cd livesys-scripts-0.8.0
