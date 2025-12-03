@@ -186,6 +186,12 @@ rootfs-include-flatpaks FLATPAKS_FILE="src/flatpaks.txt":
     mkdir -p /var/lib/flatpak
     pacman -Sy --noconfirm flatpak gdm
 
+    # Get Flatpaks
+    flatpak remote-add --if-not-exists flathub "https://dl.flathub.org/repo/flathub.flatpakrepo"
+    grep -v "#.*" /flatpak-list/$(basename {{ FLATPAKS_FILE }}) | sort --reverse | xargs "-i{}" -d "\n" sh -c "flatpak remote-info --arch={{ arch }} --system flathub {} &>/dev/null && flatpak install --noninteractive -y {}" || true'
+    set -euo pipefail
+    chroot "$CMD" --volume "$(realpath "$(dirname {{ FLATPAKS_FILE }})")":/flatpak-list
+
 # Install polkit rules
 rootfs-include-polkit polkit="1":
     #!/usr/bin/env bash
